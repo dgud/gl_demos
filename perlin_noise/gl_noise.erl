@@ -17,24 +17,44 @@ init() ->
     [PermTable, GradTable].
 
 %%%
-%%% Sends the two needed tables to opengl
-%%% init_gl([Tables]) -> TexIds.
-%%%
-init_gl() ->
-    init_gl(init()).
-init_gl([PermTable, GradTable]) ->
+%%% Initilizes and sets up the needed texture units.
+%%% init_gl(Shader, TexUnit1::integer(), TexUnit2::integer()) -> 
+%%%       {ActivateFun(), DestroyFun()}.
+%%%  Returns two fun's:
+%%%    The ActivateFun/0 should be called before the program is used
+%%%    and the DestroyFun/0 is called to cleanup and delete all textures. 
+%%%  Leaves Shader active afterwards.
+init_gl(Prog, TexUnit1, TexUnit2) ->
+    init_gl(init(), Prog, TexUnit1, TexUnit2).
+init_gl([PermTable, GradTable], Prog, TexUnit1, TexUnit2) ->
     Ids  = [PermId, GradId] = gl:genTextures(2),
     Load = fun(Id, Bin) -> 
-		   gl:bindTexture(Id),
-		   gl:texImage2D(?GL_TEXTURE_2D, 0, ?GL_RGBA, 256, 256, 0, ?GL_RGBA, ?GL_UNSIGNED_BYTE, Bin),
+		   gl:bindTexture(?GL_TEXTURE_2D, Id),
+		   gl:texImage2D(?GL_TEXTURE_2D, 0, ?GL_RGBA, 256, 256, 
+				 0, ?GL_RGBA, ?GL_UNSIGNED_BYTE, Bin),
 		   gl:texParameteri(?GL_TEXTURE_2D, ?GL_TEXTURE_MIN_FILTER, ?GL_NEAREST),
 		   gl:texParameteri(?GL_TEXTURE_2D, ?GL_TEXTURE_MAG_FILTER, ?GL_NEAREST)
 	   end,
     Load(PermId,PermTable),
     Load(GradId,GradTable),
     
-    Ids.
-
+    gl:useProgram(Prog),
+    PermLoc = gl:getUniformLocation(Prog, "permTexture"),
+    GradLoc = gl:getUniformLocation(Prog, "gradTexture"),
+    
+    gl:uniform1i(PermLoc, TexUnit1),
+    gl:uniform1i(GradLoc, TexUnit2), 
+    
+    {fun() ->  %% Activate Units
+	     gl:activeTexture(?GL_TEXTURE0 + TexUnit1),
+	     gl:bindTexture(?GL_TEXTURE_2D, PermId), 
+	     gl:activeTexture(?GL_TEXTURE0 + TexUnit2),
+	     gl:bindTexture(?GL_TEXTURE_2D, GradId)
+     end,
+     fun() ->  %% Cleanup everything
+	     gl:deleteTextures(Ids)
+     end}.
+		 
 %% Looping noise 
 %% Given that F is your function that generates a real
 %% number from a point in noise-space, and you want your animation to

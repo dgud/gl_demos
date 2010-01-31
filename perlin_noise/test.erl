@@ -82,27 +82,71 @@ events(S=#s{frame=Frame}) ->
     end.
 
 init_shader(S) ->
-    erlang:display(filename:dirname(code:which(?MODULE))),
-    
-    Head = "uniform float time; // Used for texture animation",
-    
-    Main = "
+    Dir = filename:dirname(code:which(?MODULE)),
+    {ok, VsBin} = file:read_file(filename:join(Dir, "noise_test.vs")),
+    {ok, FsBin0} = file:read_file(filename:join(Dir, "glsl_noise.fs")),
+
+    Main = <<"
+     uniform float time; // Used for texture animation
+     /*
+      * Both 2D and 3D texture coordinates are defined, for testing purposes.
+      */
+     varying vec2 v_texCoord2D;
+     varying vec3 v_texCoord3D;
+     varying vec4 v_color;
+
      void main( void )
      {
       //float n = noise(v_texCoord2D * 32.0 + 240.0);
       //float n = snoise(v_texCoord2D * 16.0);
-      //float n = noise(vec3(4.0 * v_texCoord3D.xyz * (2.0 + sin(0.5 * time))));
-      float n = snoise(vec3(2.0 * v_texCoord3D.xyz * (2.0 + sin(0.5 * time))));
+      //float n = noise(vec3(4.0 * v_texCoord3D.xyz * (2.0 + sin(0.25 * time))));
+      float n = snoise(vec3(2.0 * v_texCoord3D.xyz * (2.0 + sin(0.10 * time))));
       //float n = noise(vec4(8.0 * v_texCoord3D.xyz, 0.5 * time));
       //float n = snoise(vec4(4.0 * v_texCoord3D.xyz, 0.5 * time));
       gl_FragColor = v_color * vec4(0.5 + 0.5 * vec3(n, n, n), 1.0);
      }
-    ",
-    S.
+    ">>,
+    FsBin = <<FsBin0/binary, Main/binary>>,
+    VS = gl:createShader(?GL_VERTEX_SHADER),
+    FS = gl:createShader(?GL_FRAGMENT_SHADER),
     
+    gl:shaderSource(VS, [VsBin]),
+    gl:shaderSource(FS, [FsBin]),
+    
+    gl:compileShader(VS),
+    gl:compileShader(FS),
+    printShaderInfoLog("vertex_shader", VS),
+    printShaderInfoLog("fragment_shader", FS),
+    
+    Prog = gl:createProgram(),
+    gl:attachShader(Prog, VS),
+    gl:attachShader(Prog, FS),
+
+    gl:linkProgram(Prog),
+
+    case gl:getProgramiv(Prog, ?GL_INFO_LOG_LENGTH) of	
+	Length when Length > 1 ->
+	    Info = gl:getProgramInfoLog(Prog,Length),
+	    io:format("  ~s: ~s~n",["GLSLPerlin", Info]);
+	_ ->  ok
+    end,
+    
+    S#s{shader=Prog}.
+
+printShaderInfoLog(File, Shader) ->
+    Length  = gl:getShaderiv(Shader, ?GL_INFO_LOG_LENGTH),
+    case Length > 1 of
+	true ->
+	    Log = gl:getShaderInfoLog(Shader, Length),
+	    io:format("  ~s: ~s~n",[File, Log]);
+	false ->
+	    ok
+    end.
+
 initg() ->
     WX = wx:new(),
-    Frame = wxFrame:new(WX,1,"Hello 3D-World",[{size, {?W,?H}}]),
+    Frame = wxFrame:new(WX,1,"Perlin Noise (from GLSL) Demo",
+			[{size, {?W,?H}}]),
     wxFrame:connect(Frame, close_window),
 
     MenuBar  = wxMenuBar:new(),
@@ -146,42 +190,33 @@ initg() ->
     #s{frame=Frame, canvas=Canvas, time=#time{}}.
 
 
-load_sphere(State) ->
-    {Size, DataChunk, [Ns]} = 
-	sphere:tris([{subd,5}, {ccw,false}, {binary,true},
-		     {scale,3}, {normals,true}]),
-    TexCoords = << <<1.0:?F32, Y:?F32>> || 
-		    <<X:?F32,Y:?F32,Z:?F32>> <= Ns >>,
-
-    StartNormals = size(DataChunk),
-    StartTexCoords = StartNormals + size(Ns),
-    Data = <<DataChunk/binary, Ns/binary, TexCoords/binary>>,
-
+load_sphere(State = #s{shader=Prog}) ->
+    {Size, Data, _} = sphere:tris([{subd,5}, {ccw,false}, {binary,true}, {scale,3}]),
+    
     [Buff] = gl:genBuffers(1),
     gl:bindBuffer(?GL_ARRAY_BUFFER,Buff),
     gl:bufferData(?GL_ARRAY_BUFFER, size(Data), Data, ?GL_STATIC_DRAW),
+    
+    gl:useProgram(Prog),
+    {ActivateGLSL, _Destroy} = gl_noise:init_gl(Prog, 0, 1),
+    TimeLoc = gl:getUniformLocation(Prog, "time"),
 
     Draw = fun(Time, _Rs) ->
 		   gl:color3ub(150,70,70),
-		   %% Setup Textures
-		   %% gl:enable(?GL_TEXTURE_2D),
-		   %gl:bindTexture(?GL_TEXTURE_2D, TexId),		   
+		   gl:useProgram(Prog),
+		   ActivateGLSL(),
+		   gl:uniform1f(TimeLoc, Time/1000),
 		   %% Setup draw buffers
 		   gl:bindBuffer(?GL_ARRAY_BUFFER,Buff),
 		   gl:vertexPointer(3, ?GL_FLOAT, 0, 0),
-		   gl:normalPointer(?GL_FLOAT, 0, StartNormals),
-		   gl:texCoordPointer(2,?GL_FLOAT, 0, StartTexCoords),
 		   gl:enableClientState(?GL_VERTEX_ARRAY),
-		   gl:enableClientState(?GL_NORMAL_ARRAY),
-		   gl:enableClientState(?GL_TEXTURE_COORD_ARRAY),
 
 		   %% Draw buffer
 		   gl:drawArrays(?GL_TRIANGLES, 0, Size*3),
 		   
 		   %% Disable these draw buffers
 		   gl:bindBuffer(?GL_ARRAY_BUFFER,0),
-		   gl:disableClientState(?GL_VERTEX_ARRAY),
-		   gl:disableClientState(?GL_NORMAL_ARRAY)
+		   gl:disableClientState(?GL_VERTEX_ARRAY)
 	   end,
     State#s{draw=Draw}.
 

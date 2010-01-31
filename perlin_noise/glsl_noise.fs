@@ -13,6 +13,7 @@
  *
  * Author: Stefan Gustavson ITN-LiTH (stegu@itn.liu.se) 2004-12-05
  * Simplex indexing functions by Bill Licea-Kane, ATI (bill@ati.com)
+ * (dgud) See: http://webstaff.itn.liu.se/~stegu/simplexnoise/
  *
  * You may use, modify and redistribute this code free of charge,
  * provided that the author's names and this notice appear intact.
@@ -51,13 +52,6 @@
  */
 uniform sampler2D permTexture;
 uniform sampler2D gradTexture;
-
-/*
- * Both 2D and 3D texture coordinates are defined, for testing purposes.
- */
-varying vec2 v_texCoord2D;
-varying vec3 v_texCoord3D;
-varying vec4 v_color;
 
 /*
  * To create offsets of one texel and one half texel in the
