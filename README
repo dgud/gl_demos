@@ -1,13 +1,18 @@
 A couple of opengl demos using wxErlang.
 
-image - tests transfer of images between wx and opengl.
+image 
+      Tests transfer of images between wx and opengl.
 
-cubes - contains vertex shader animations and shadow mapping.
+cubes  
+      Contains vertex shader animations and shadow mapping.
 
-draw_wings_models - loads and displays wings models exported with the example
-		  exporter.  Turn on the cool shader in options menu.
+draw_wings_models
+      Loads and displays wings models exported with the example
+      exporter.  Turn on the cool shader in options menu.
    
-
+perlin_noise 
+      Contains code a perlin noise shader and test/example code of 
+	     
 erl -make && erl -run <demomodule>
 
 If you have something cool that you want me to include, send it to me.
