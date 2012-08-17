@@ -286,28 +286,24 @@ load_texture_by_string(Font, Color, String) ->
     wxMemoryDC:clear(DC),
     wxMemoryDC:setTextForeground(DC, {255, 255, 255}),
     wxMemoryDC:drawText(DC, String, {0, 0}),
-    wxMemoryDC:selectObject(DC, wxBitmap:new()),
-
     Img = wxBitmap:convertToImage(Bmp),
+    wxMemoryDC:destroy(DC),
+    
     Alpha = wxImage:getData(Img),
     Data = colourize_image(Alpha, Color),
-
     [TId] = gl:genTextures(1),
     gl:bindTexture(?GL_TEXTURE_2D, TId),
     gl:texParameteri(?GL_TEXTURE_2D, ?GL_TEXTURE_MAG_FILTER, ?GL_LINEAR),
     gl:texParameteri(?GL_TEXTURE_2D, ?GL_TEXTURE_MIN_FILTER, ?GL_LINEAR),
     gl:texEnvf(?GL_TEXTURE_ENV, ?GL_TEXTURE_ENV_MODE, ?GL_REPLACE),
-%%     gl:pixelStorei(?GL_UNPACK_ROW_LENGTH, 0),
-%%     gl:pixelStorei(?GL_UNPACK_ALIGNMENT, 2),
-    gl:texImage2D(?GL_TEXTURE_2D, 0, ?GL_RGBA,
-  		  W, H, 0, ?GL_RGBA, ?GL_UNSIGNED_BYTE, Data),
+    gl:texImage2D(?GL_TEXTURE_2D, 0, ?GL_RGBA, W, H, 0, ?GL_RGBA, ?GL_UNSIGNED_BYTE, Data),
 
     #texture{tid = TId, w = StrW, h = StrH, 
  	     minx = 0, miny = 0, maxx = StrW / W, maxy = StrH / H}.
 
 colourize_image(Alpha, {R,G,B}) ->
-    list_to_binary([<<R,G,B,A>> || <<A,A,A>> <= Alpha]).
-    
+    list_to_binary([<<R,G,B,A>> || <<A,_B,_G>> <= Alpha]).
+
 get_data_for_use_with_teximage2d(Image) ->
     RGB = wxImage:getData(Image),
     case wxImage:hasAlpha(Image) of
