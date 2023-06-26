@@ -9,7 +9,7 @@
 
 -module(draw_wings).
 
--compile(export_all).
+-compile([export_all, nowarn_export_all]).
 -include_lib("wx/include/wx.hrl").
 -include_lib("wx/include/gl.hrl").
 -compile(inline).
@@ -45,8 +45,8 @@
 -record(time, {fps=0,      % frames per second
 	       fc=0,       % frame counter
 	       diff=0,     % Time last frame in ms
-	       start =erlang:now(),
-	       fcst  =erlang:now()}).  % frame counter start time
+	       start = erlang:monotonic_time(),
+	       fcst  = erlang:monotonic_time()}).  % frame counter start time
 
 
 start() ->
@@ -96,8 +96,8 @@ loop(S=#s{frame=F,rstate=RS,canvas=Canvas,cam=Cam,time=T,font=_F}, BG, Render) -
 lights() ->
     gl:lightModelfv(?GL_LIGHT_MODEL_AMBIENT, {0.4,0.4,0.4,1.0}),
     gl:enable(?GL_LIGHT0),
-    gl:lightfv(?GL_LIGHT0, ?GL_DIFFUSE,  {1,1,1,1}), 
-    gl:lightfv(?GL_LIGHT0, ?GL_SPECULAR, {0.5,0.5,0.5,1}),
+    gl:lightfv(?GL_LIGHT0, ?GL_DIFFUSE,  {1.0,1.0,1.0,1.0}),
+    gl:lightfv(?GL_LIGHT0, ?GL_SPECULAR, {0.5,0.5,0.5,1.0}),
     gl:lightfv(?GL_LIGHT0, ?GL_POSITION, {0.71,0.71,0.0,0.0}),
     ok.
 
@@ -159,6 +159,7 @@ initg() ->
 
     Attrs = [{attribList, [?WX_GL_RGBA,?WX_GL_DOUBLEBUFFER,0]}],
     Canvas = wxGLCanvas:new(Frame, Attrs),
+    Context = wxGLContext:new(Canvas),
     wxFrame:connect(Canvas, size),
     wxFrame:connect(Canvas, motion),
     wxFrame:connect(Canvas, middle_up),
@@ -167,7 +168,7 @@ initg() ->
     
     wxWindow:show(Frame),
     %% Set Current must be called after show and before any opengl call.
-    wxGLCanvas:setCurrent(Canvas),
+    wxGLCanvas:setCurrent(Canvas, Context),
 
     gl:viewport(0,0,?W,?H),
     
@@ -474,9 +475,9 @@ modelview(#cam{origin=Origin,distance=Dist,azimuth=Az,
 	is_function(Lights) -> 	Lights();
 	true -> ok
     end,
-    gl:translatef(PanX, PanY, -Dist),
-    gl:rotatef(El, 1, 0, 0),
-    gl:rotatef(Az, 0, 1, 0),
+    gl:translatef(float(PanX), float(PanY), float(-Dist)),
+    gl:rotatef(El, 1.0, 0.0, 0.0),
+    gl:rotatef(Az, 0.0, 1.0, 0.0),
     {OX,OY,OZ} = Origin,
     gl:translatef(OX, OY, OZ),
     ok.
@@ -519,7 +520,7 @@ cam_event(Ev,Cam) ->
 
 fps(Frame, T) ->   fps(Frame, T, 500).
 fps(Frame, T0 = #time{fcst=FCSt,start=Start,fc=FC},Interval) ->
-    Now = erlang:now(),
+    Now = erlang:monotonic_time(),
     Diff = tdiff(Now,Start),
     Time = tdiff(Now,FCSt), 
     if Time > Interval ->
@@ -531,8 +532,8 @@ fps(Frame, T0 = #time{fcst=FCSt,start=Start,fc=FC},Interval) ->
 	    T0#time{fc=FC+1,diff=Diff}
     end.
 
-tdiff({A2,B2,C2},{A1,B1,C1}) ->
-    (A2-A1)*1000000+(B2-B1)*1000 + (C2-C1) / 1000.
+tdiff(A,B) ->
+    erlang:convert_time_unit(A-B, native, millisecond).
 
 %%%%%%%%%% File loading
 
