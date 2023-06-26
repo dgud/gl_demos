@@ -6,22 +6,22 @@
 %%% Created : 30 Oct 2008 by 
 %%%-------------------------------------------------------------------
 -module(cubes).
--compile(export_all).
+-compile([export_all, nowarn_export_all]).
 
 -include_lib("wx/include/wx.hrl"). 
 -include_lib("wx/include/gl.hrl"). 
 
--define(error(), error(?LINE)).
+-define(ERROR(), check_error(?LINE)).
 -define(F32, 32/native-float).
 -define(GSz, 10).  
 -define(TEXTURE_SIZE, 512).
 
--define(FPS, 10000). %% Frame time in micro-sec.
+-define(FPS, 10). %% Frame time in milli-sec.
 -record(ds, {t0,   % Start time
 	     tn,   % Prev frame
 	     td=0, % Sleep to next frame	     
 	     fc, 
-	     light_pos = {-15,10,30},
+	     light_pos = {-15.0,10.0,30.0},
 	     depth,
 	     shader,
 	     bpi, canvas, data}).
@@ -55,10 +55,12 @@ init() ->
     setup_menus(Frame),
     GLAttrs = [?WX_GL_RGBA,?WX_GL_DOUBLEBUFFER,0],
     Canvas = wxGLCanvas:new(Frame, [{attribList, GLAttrs}]),
+    Context = wxGLContext:new(Canvas),
     wxWindow:connect(Canvas, motion),
     Data = setup_vs(),
     wxWindow:show(Frame),   %% Must show to initilize context.
-    wxGLCanvas:setCurrent(Canvas),
+    timer:sleep(500),  %% Must wait until window is realized on linux
+    wxGLCanvas:setCurrent(Canvas, Context),
     State0 = initGL(Canvas,Data),
     loop(Frame, State0),
     wx:destroy().
@@ -87,18 +89,19 @@ loop(Frame,State = #ds{td=Rem, fc=FC}) ->
 	    New = drawCanvas(State),
 	    case FC rem 100 of
 		0 ->
-		    Ms = timer:now_diff(now(), State#ds.t0) div 1000,
-		    Str = lists:flatten(io_lib:format(" FPS: ~p Sleep: ~p ms", 
+		    Ms = erlang:convert_time_unit(erlang:monotonic_time()-State#ds.t0,
+                                                  native, millisecond),
+		    Str = lists:flatten(io_lib:format(" FPS: ~p Sleep: ~p ms",
 						      [1000*FC div Ms, Rem])),
 		    wxFrame:setStatusText(Frame, Str,[]);
 		_ ->
 		    ok
 	    end,
-	    ?error(),
+	    ?ERROR(),
 	    loop(Frame,calc_rem(New))
     end.
  
-error(Line) ->
+check_error(Line) ->
     case gl:getError() of
 	0 -> ok;
 	Err -> 
@@ -118,14 +121,14 @@ setup_menus(Frame) ->
 
 initGL(Canvas, Data = {Vs,Ns}) ->
     {W,H} = wxWindow:getClientSize(Canvas),
-    ?error(),
+    ?ERROR(),
     gl:viewport(0,0,W,H),
     gl:matrixMode(?GL_PROJECTION),
     gl:loadIdentity(),
-    glu:perspective(30, W/H, 15.0, 80.0),
+    glu:perspective(30.0, W/H, 15.0, 80.0),
     gl:matrixMode(?GL_MODELVIEW),
     gl:loadIdentity(),  
-    glu:lookAt(15,15,15, 0,0,0, 0,1,0),
+    glu:lookAt(15.0,15.0,15.0, 0.0,0.0,0.0, 0.0,1.0,0.0),
 
     gl:hint(?GL_POINT_SMOOTH_HINT, ?GL_NICEST),   gl:enable(?GL_POINT_SMOOTH), 
     gl:hint(?GL_LINE_SMOOTH_HINT, ?GL_NICEST),    gl:enable(?GL_LINE_SMOOTH), 
@@ -146,8 +149,8 @@ initGL(Canvas, Data = {Vs,Ns}) ->
     ShadowMapI = gl:getUniformLocation(Prog, "ShadowMap"),
 
     DepthBuffs  = setup_fbo(),
-    ?error(),
-    Now = now(),
+    ?ERROR(),
+    Now = erlang:monotonic_time(),
     #ds{t0=Now, tn=Now, td=?FPS, fc=0, 
 	bpi    = {BumpPosI,LightPosI,LightMatI,ShadowMapI}, 
 	depth  = DepthBuffs, shader = Prog,
@@ -159,7 +162,8 @@ drawCanvas(#ds{t0=T0,fc=Fc, light_pos={LX,LY,LZ},
 	       canvas=Canvas, bpi={BPI,LPI,LMI,SMI}
 	      } = State) ->
     %% setup where the hole is
-    {X,Z} = circle(timer:now_diff(now(),T0) div 1000),
+    Time = erlang:convert_time_unit(erlang:monotonic_time()-T0, native, millisecond),
+    {X,Z} = circle(Time),
     gl:uniform3f(BPI,X,1.0,Z),
     %% Light Position
     gl:uniform4f(LPI,LX,LY,LZ,1.0),
@@ -170,11 +174,11 @@ drawCanvas(#ds{t0=T0,fc=Fc, light_pos={LX,LY,LZ},
 	gl:matrixMode(?GL_PROJECTION),
 	gl:pushMatrix(),
  	gl:loadIdentity(),	
- 	glu:perspective(60, 1.0, 15.0, 80.0),
+ 	glu:perspective(60.0, 1.0, 15.0, 80.0),
 	gl:matrixMode(?GL_MODELVIEW),
 	gl:pushMatrix(),
 	gl:loadIdentity(),  
-	glu:lookAt(LX,LY,LZ, 0,0,0, 0,1,0),
+	glu:lookAt(LX,LY,LZ, 0.0,0.0,0.0, 0.0,1.0,0.0),
 	LightMVMat   = gl:getFloatv(?GL_MODELVIEW_MATRIX),
 	LightProjMat = gl:getFloatv(?GL_PROJECTION_MATRIX),	
 	gl:drawBuffer(?GL_NONE),
@@ -200,7 +204,7 @@ drawCanvas(#ds{t0=T0,fc=Fc, light_pos={LX,LY,LZ},
     gl:bindTexture(?GL_TEXTURE_2D, 0),
     gl:disable(?GL_TEXTURE_2D),
     
-    ?error(),    
+    ?ERROR(),    
     wxGLCanvas:swapBuffers(Canvas),
     %% Sync command queue, so we don't choke the driver and get no events 
     _ = wxWindow:getSize(Canvas),
@@ -213,14 +217,14 @@ circle(T0) ->
     {R * math:sin(T), R * math:cos(T)}.
 
 calc_rem(#ds{tn=T0} = State)->
-    T1 = now(),
-    Tdiff = timer:now_diff(T1, T0),
+    T1 = erlang:monotonic_time(),
+    Tdiff = erlang:convert_time_unit(T1-T0, native, millisecond),
     Sleep = ?FPS - Tdiff,
-    case Sleep =< 1000 of
-	true -> 
+    case Sleep =< 1 of
+	true ->
 	    State#ds{tn=T1,td=0};
 	false ->
-	    State#ds{tn=T1,td=Sleep div 1000}
+	    State#ds{tn=T1,td=Sleep}
     end.
     
 	
@@ -300,12 +304,12 @@ setup_fbo() ->
 		  ?TEXTURE_SIZE, ?TEXTURE_SIZE, 0,
 		  ?GL_DEPTH_COMPONENT, ?GL_UNSIGNED_INT,
 		  0),    
-    gl:texParameterf(?GL_TEXTURE_2D,?GL_TEXTURE_MIN_FILTER,?GL_LINEAR),
-    gl:texParameterf(?GL_TEXTURE_2D,?GL_TEXTURE_WRAP_S, ?GL_CLAMP),
-    gl:texParameterf(?GL_TEXTURE_2D,?GL_TEXTURE_WRAP_T, ?GL_CLAMP),    
+    gl:texParameteri(?GL_TEXTURE_2D,?GL_TEXTURE_MIN_FILTER,?GL_LINEAR),
+    gl:texParameteri(?GL_TEXTURE_2D,?GL_TEXTURE_WRAP_S, ?GL_CLAMP),
+    gl:texParameteri(?GL_TEXTURE_2D,?GL_TEXTURE_WRAP_T, ?GL_CLAMP),
     gl:texParameteri(?GL_TEXTURE_2D,?GL_TEXTURE_COMPARE_MODE,
 		     ?GL_COMPARE_R_TO_TEXTURE),
-    gl:texParameteri(?GL_TEXTURE_2D, 
+    gl:texParameteri(?GL_TEXTURE_2D,
 		     ?GL_TEXTURE_COMPARE_FUNC, ?GL_LEQUAL),    
     gl:bindTexture(?GL_TEXTURE_2D, 0),
     
