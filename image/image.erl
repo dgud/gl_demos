@@ -11,7 +11,7 @@
 -include_lib("wx/include/wx.hrl"). 
 -include_lib("wx/include/gl.hrl"). 
 
--export([start/0]).
+-export([start/0, init/0]).
 
 -record(s,  {f,w1,w2,w3}).
 -record(img,{win, image, bmp}).
@@ -44,6 +44,7 @@ init() ->
     Image   = wxImage:new("Powered.bmp"),
     GLAttrib = [{attribList, [?WX_GL_RGBA,?WX_GL_DOUBLEBUFFER,0]}],
     W2 = wxGLCanvas:new(Panel,Opts ++ GLAttrib),
+    Context = wxGLContext:new(W2),
     W3 = wxWindow:new(Panel, ?wxID_ANY, Opts),
     wxWindow:connect(W3, paint, [{skip, true}]),
     %% Setup sizer
@@ -60,7 +61,8 @@ init() ->
     wxSizer:setSizeHints(Sz,Frame),
     %% Show
     wxFrame:show(Frame),
-    wxGLCanvas:setCurrent(W2),
+    timer:sleep(500),
+    wxGLCanvas:setCurrent(W2, Context),
     GL = setup_gl(W2,Image),
     State = screenshot(#s{f=Frame,w1=#img{win=W1,image=Image},
 			  w2=GL,w3=#img{win=W3}}),
@@ -129,12 +131,12 @@ redraw2(Img = #img{win=Win,bmp=Bmp},Txt) ->
 
 -define(FACES, 
 	%% Faces    Normal     U-axis   V-axis 
-	[{{1,2,3,4},{0,0,-1},{-1,0,0}, {0,1,0}},  % 
-	 {{8,1,4,5},{-1,0,0},{0,0,1},  {0,1,0}},  %
-	 {{2,7,6,3},{1,0,0}, {0,0,-1}, {0,1,0}},  %
-	 {{7,8,5,6},{0,0,1}, {1,0,0},  {0,1,0}},  %
-	 {{4,3,6,5},{0,1,0}, {-1,0,0}, {0,0,1}},  %
-	 {{1,2,7,8},{0,-1,0},{1,0,0},  {0,0,1}}]).
+	[{{1,2,3,4},{0.0,0.0,-1.0},{-1,0,0}, {0,1,0}},  % 
+	 {{8,1,4,5},{-1.0,0.0,0.0},{0,0,1},  {0,1,0}},  %
+	 {{2,7,6,3},{1.0,0.0,0.0}, {0,0,-1}, {0,1,0}},  %
+	 {{7,8,5,6},{0.0,0.0,1.0}, {1,0,0},  {0,1,0}},  %
+	 {{4,3,6,5},{0.0,1.0,0.0}, {-1,0,0}, {0,0,1}},  %
+	 {{1,2,7,8},{0.0,-1.0,0.0},{1,0,0},  {0,0,1}}]).
 
 -define(COLORS,{{ 0.0,  0.0,  0.0},		
 		{ 1.0,  0.0,  0.0},
@@ -198,11 +200,11 @@ drawBox(#gl{win=Win,deg=Deg,data={Fs,Vs,Colors},mat=MatT,alpha=ImgA,text=Text}) 
     gl:rotatef(Deg, 1.0, 1.0, 1.0),
     gl:clear(?GL_COLOR_BUFFER_BIT bor ?GL_DEPTH_BUFFER_BIT),
     gl:bindTexture(?GL_TEXTURE_2D, MatT#texture.tid),
-    gl:texEnvf(?GL_TEXTURE_ENV, ?GL_TEXTURE_ENV_MODE, ?GL_MODULATE),
+    gl:texEnvi(?GL_TEXTURE_ENV, ?GL_TEXTURE_ENV_MODE, ?GL_MODULATE),
     gl:'begin'(?GL_QUADS),
     wx:foreach(fun(Face) -> drawFace(Face,Vs,Colors) end, Fs),
     gl:'end'(),
-    gl:texEnvf(?GL_TEXTURE_ENV, ?GL_TEXTURE_ENV_MODE, ?GL_REPLACE),
+    gl:texEnvi(?GL_TEXTURE_ENV, ?GL_TEXTURE_ENV_MODE, ?GL_REPLACE),
     enter_2d_mode(Win),
     Move = abs(90 - (trunc(Deg) rem 180)),
     draw_texture(50, 20+Move, Text),
@@ -227,10 +229,10 @@ draw_texture(X, Y,  #texture{tid = TId, w = W, h = H,
 			     maxx = MaxX, maxy = MaxY}) ->
     gl:bindTexture(?GL_TEXTURE_2D, TId),
     gl:'begin'(?GL_TRIANGLE_STRIP),
-    gl:texCoord2f(MinX, MinY), gl:vertex2i(X,   Y  ),
-    gl:texCoord2f(MaxX, MinY), gl:vertex2i(X+W div 2, Y  ),
-    gl:texCoord2f(MinX, MaxY), gl:vertex2i(X,   Y+H div 2),
-    gl:texCoord2f(MaxX, MaxY), gl:vertex2i(X+W div 2, Y+H div 2),
+    gl:texCoord2f(float(MinX), float(MinY)), gl:vertex2i(X,   Y  ),
+    gl:texCoord2f(float(MaxX), float(MinY)), gl:vertex2i(X+W div 2, Y  ),
+    gl:texCoord2f(float(MinX), float(MaxY)), gl:vertex2i(X,   Y+H div 2),
+    gl:texCoord2f(float(MaxX), float(MaxY)), gl:vertex2i(X+W div 2, Y+H div 2),
     gl:'end'().
 
 load_texture_by_image(Image) ->
@@ -295,7 +297,7 @@ load_texture_by_string(Font, Color, String) ->
     gl:bindTexture(?GL_TEXTURE_2D, TId),
     gl:texParameteri(?GL_TEXTURE_2D, ?GL_TEXTURE_MAG_FILTER, ?GL_LINEAR),
     gl:texParameteri(?GL_TEXTURE_2D, ?GL_TEXTURE_MIN_FILTER, ?GL_LINEAR),
-    gl:texEnvf(?GL_TEXTURE_ENV, ?GL_TEXTURE_ENV_MODE, ?GL_REPLACE),
+    gl:texEnvi(?GL_TEXTURE_ENV, ?GL_TEXTURE_ENV_MODE, ?GL_REPLACE),
     gl:texImage2D(?GL_TEXTURE_2D, 0, ?GL_RGBA, W, H, 0, ?GL_RGBA, ?GL_UNSIGNED_BYTE, Data),
 
     #texture{tid = TId, w = StrW, h = StrH, 
@@ -346,7 +348,7 @@ enter_2d_mode(Win) ->
     %% projection to correct this.  
     %% Note: We could flip the texture/image itself, but this will
     %% also work for mouse coordinates.
-    gl:ortho(0.0, W, H, 0.0, 0.0, 1.0),
+    gl:ortho(0.0, float(W), float(H), 0.0, 0.0, 1.0),
 
     gl:matrixMode(?GL_MODELVIEW),
     gl:pushMatrix(),
