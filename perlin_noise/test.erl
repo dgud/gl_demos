@@ -15,8 +15,8 @@
 -record(time, {fps=0,      % frames per second
 	       fc=0,       % frame counter
 	       diff=0,     % Time last frame in ms
-	       start =erlang:now(),
-	       fcst  =erlang:now()}).  % frame counter start time
+	       start =erlang:monotonic_time(),
+	       fcst  =erlang:monotonic_time()}).  % frame counter start time
 
 -record(s,  {frame, canvas, shader, draw, time, active=4}).
 
@@ -48,14 +48,14 @@ loop(State=#s{frame=F, canvas=Canvas, draw=Draw, time=T, shader=Shs, active=Acti
 	{_,2,_} ->
 	    gl:matrixMode(?GL_PROJECTION),
 	    gl:loadIdentity(),
-	    glu:ortho2D(0,?W,0,?H),
+	    glu:ortho2D(0.0,float(?W),0.0,float(?H)),
 	    gl:matrixMode(?GL_MODELVIEW),
 	    gl:loadIdentity(),
 	    ok;
 	{_,3,_} ->
 	    gl:matrixMode(?GL_PROJECTION),
 	    gl:loadIdentity(),
-	    glu:perspective(40, ?W/?H, 0.1, 1000),
+	    glu:perspective(40.0, ?W/?H, 0.1, 1000.0),
 	    gl:matrixMode(?GL_MODELVIEW),
 	    gl:loadIdentity(),
 	    glu:lookAt(0.0,0.0,10.0, 0.0,0.0,0.0, 0.0,1.0,0.0)
@@ -196,11 +196,13 @@ initg() ->
 
     Attrs = [{attribList, [?WX_GL_RGBA,?WX_GL_DOUBLEBUFFER,0]}],
     Canvas = wxGLCanvas:new(Frame, Attrs),
+    Context = wxGLContext:new(Canvas),
     %% wxFrame:connect(Canvas, size),
 
     wxWindow:show(Frame),
+    timer:sleep(500),
     %% Set Current must be called after show and before any opengl call.
-    wxGLCanvas:setCurrent(Canvas),
+    wxGLCanvas:setCurrent(Canvas, Context),
 
     gl:viewport(0,0,?W,?H),
 
@@ -292,7 +294,7 @@ test_create_texture(Id0, Scale) ->
 
 fps(Frame, T) ->   fps(Frame, T, 500).
 fps(Frame, T0 = #time{fcst=FCSt,start=Start,fc=FC},Interval) ->
-    Now = erlang:now(),
+    Now = erlang:monotonic_time(),
     Diff = tdiff(Now,Start),
     Time = tdiff(Now,FCSt), 
     if Time > Interval ->
@@ -304,8 +306,8 @@ fps(Frame, T0 = #time{fcst=FCSt,start=Start,fc=FC},Interval) ->
 	    T0#time{fc=FC+1,diff=Diff}
     end.
 
-tdiff({A2,B2,C2},{A1,B1,C1}) ->
-    (A2-A1)*1000000+(B2-B1)*1000 + (C2-C1) / 1000.
+tdiff(A,B) ->
+    erlang:convert_time_unit(A-B, native, millisecond).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%
